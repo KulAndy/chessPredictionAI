@@ -1,3 +1,4 @@
+import math
 import pickle
 import tkinter as tk
 from tkinter import ttk
@@ -36,12 +37,12 @@ class ChessApp:
         self.board = chess.Board()
         self.selected_square = None
 
-        self.fen_obj={}
+        self.fen_obj = {}
+        self.predictions = []  # Store predictions for display
 
         self.input_var = tk.StringVar()
         self.input_entry = ttk.Combobox(self.master, textvariable=self.input_var)
-        self.input_entry['values'] = [
-        ]
+        self.input_entry['values'] = []
         self.input_entry.set("")
         self.input_entry.pack(pady=10)
 
@@ -57,6 +58,27 @@ class ChessApp:
         self.canvas = tk.Canvas(self.master, width=400, height=400)
         self.canvas.pack()
         self.canvas.bind("<Button-1>", self.on_click)
+
+        # Frame for predictions with a scrollbar
+        self.prediction_frame = ttk.Frame(self.master)
+        self.prediction_frame.pack(pady=10)
+
+        self.scrollbar = ttk.Scrollbar(self.prediction_frame, orient=tk.VERTICAL)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.prediction_canvas = tk.Canvas(self.prediction_frame, yscrollcommand=self.scrollbar.set)
+        self.prediction_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.scrollbar.config(command=self.prediction_canvas.yview)
+
+        self.prediction_container = ttk.Frame(self.prediction_canvas)
+        self.prediction_canvas.create_window((0, 0), window=self.prediction_container, anchor="nw")
+
+        self.prediction_container.bind("<Configure>", self.on_frame_configure)
+
+        # Progress bar
+        self.progress_bar = ttk.Progressbar(self.master, orient="horizontal", length=300, mode="determinate")
+        self.progress_bar.pack(pady=10)
 
         self.draw_board()
 
@@ -129,8 +151,6 @@ class ChessApp:
         pgn = "\n".join((row2pgn(x) for x in data))
         temp_file = tempfile.NamedTemporaryFile(suffix=f"{input_value}_none.pgn", delete=False)
 
-        print(temp_file.name)
-
         with open(temp_file.name, 'w') as file:
             file.write(pgn)
 
@@ -139,7 +159,6 @@ class ChessApp:
 
         analyze_file(temp_file.name, temp_dir.name)
         file_name_without_ext = os.path.splitext(os.path.basename(temp_file.name))[0]
-        print(f"{temp_dir.name}/{file_name_without_ext}.pkl")
 
         with open(f"{temp_dir.name}/{file_name_without_ext}.pkl", 'rb') as file:
             self.fen_obj = pickle.load(file)
@@ -150,29 +169,70 @@ class ChessApp:
         temp_dir.cleanup()
 
     def predicate(self):
+        self.predictions.clear()
+        for widget in self.prediction_container.winfo_children():
+            widget.destroy()
 
         try:
             fen = " ".join(self.board.fen().split(" ")[:-2])
             for key in self.fen_obj[fen]:
                 value = self.fen_obj[fen][key]
                 predictions = load_and_predict(np.array([value]))
-                print(f"{key}: {predictions[0][0]}")
+                prediction_value = predictions[0][0]
+                print(f"{key} {prediction_value}")
+
+                try:
+                    log_value = 1/( math.log(prediction_value, 1/1000) + 1)
+                except:
+                    log_value = 0
+                print(f"{key} {log_value}")
+                self.predictions.append((key, prediction_value))
+
+                row_frame = tk.Frame(self.prediction_container)
+                row_frame.pack(fill=tk.X, pady=2)
+
+                move_label = tk.Label(row_frame, text=key)
+                move_label.pack(side=tk.LEFT, padx=5)
+
+                self.draw_prediction_bar(row_frame, log_value)
+
+                self.update_progress_bar(len(self.predictions))
+
+            print("=" * 50)
 
         except KeyError:
             pass
+
+    def draw_prediction_bar(self, parent_frame, log_value):
+        canvas_height = 30
+        max_log_value = 3
+        height = min(max(int(log_value / max_log_value * canvas_height), 0), canvas_height)
+
+        prediction_bar = tk.Canvas(parent_frame, width=300, height=canvas_height)
+        prediction_bar.pack(side=tk.LEFT)
+
+        y = canvas_height - height  # Position the bar from the bottom
+        prediction_bar.create_rectangle(0, y, 300, canvas_height, fill="green")
+        prediction_bar.create_text(150, y - 10, text=f"{log_value:.2f}", anchor="center")
+
+    def update_progress_bar(self, count):
+        progress_percentage = (count / len(self.fen_obj)) * 100 if self.fen_obj else 0
+        self.progress_bar['value'] = progress_percentage
+
+    def on_frame_configure(self, event):
+        self.prediction_canvas.configure(scrollregion=self.prediction_canvas.bbox("all"))
 
 
 def row2pgn(row):
     return f"""[Event "{row["Event"]}"]
 [Site "{row["Site"]}"]
-[Date "{row["Year"]}.{row["Month"]or"??"}.{row["Day"] or "??"}"]
+[Date "{row["Year"]}.{row["Month"] or "??"}.{row["Day"] or "??"}"]
 [Round "{row["Round"]}"]
 [White "{row["White"]}"]
 [Black "{row["Black"]}"]
 [Result "{row["Result"]}"]
 
-{row["moves"]}
-"""
+{row["moves"]}\n"""
 
 
 if __name__ == "__main__":
