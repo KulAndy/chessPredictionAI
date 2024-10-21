@@ -30,7 +30,7 @@ def analyze_file(filename, out_dir):
     color = file_name_without_ext.split("_")[-1]
     if os.path.exists(f"{out_dir}/{file_name_without_ext}.pkl"):
         return True
-    results = process_pgn(filename, color)
+    results = process_pgn(filename, None if color == "none" else color)
     # Convert the defaultdict to a regular dict before pickling
     results_dict = {fen: dict(year_data) for fen, year_data in results.items()}
     for fen in results_dict:
@@ -40,7 +40,7 @@ def analyze_file(filename, out_dir):
     return True
 
 
-def process_pgn(file_path, color):
+def process_pgn(file_path, color=None):
     games_data = defaultdict(
         lambda:
         defaultdict(
@@ -66,17 +66,17 @@ def process_pgn(file_path, color):
 
             board = game.board()
             result = game.headers.get("Result")
-            points = get_points(result, color)
 
             try:
                 for move in game.mainline_moves():
-                    fen = board.fen()
+                    fen = " ".join(board.fen().split(" ")[:-2])
 
                     if board.is_legal(move):
-                        if (color == "white" and board.turn == chess.WHITE) or (
-                                color == "black" and board.turn == chess.BLACK):
+                        if (color == "white" and board.turn == chess.WHITE) \
+                                or (color == "black" and board.turn == chess.BLACK) \
+                                or color is None:
                             games_data[fen][year][move.uci()]["games"] += 1
-                            games_data[fen][year][move.uci()]["points"] += points
+                            games_data[fen][year][move.uci()]["points"] += get_points(result, board.turn)
                         board.push(move)
                     else:
                         break
@@ -88,9 +88,9 @@ def process_pgn(file_path, color):
 
 def get_points(result, color):
     if result == "1-0":
-        return 1 if color == "white" else 0
+        return 1 if color == chess.WHITE else 0
     elif result == "0-1":
-        return 1 if color == "black" else 0
+        return 1 if color == chess.BLACK else 0
     elif result == "1/2-1/2":
         return 0.5
     return 0

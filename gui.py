@@ -1,10 +1,16 @@
+import pickle
 import tkinter as tk
 from tkinter import ttk
 import chess
 import urllib.parse
+import tempfile
 
 import requests
+import os
+import numpy as np
 
+from analyze import analyze_file
+from learning import load_and_predict
 from settings import SETTINGS
 
 CHESS_PIECES = {
@@ -29,6 +35,8 @@ class ChessApp:
         self.master.title("Chess Board")
         self.board = chess.Board()
         self.selected_square = None
+
+        self.fen_obj={}
 
         self.input_var = tk.StringVar()
         self.input_entry = ttk.Combobox(self.master, textvariable=self.input_var)
@@ -86,7 +94,8 @@ class ChessApp:
             move = chess.Move(self.selected_square, clicked_square)
             if move in self.board.legal_moves:
                 self.board.push(move)
-                print("FEN:", self.board.fen())
+                print("FEN:", " ".join(self.board.fen().split(" ")[:-2]))
+                self.predicate()
             self.selected_square = None
 
         self.draw_board()
@@ -106,10 +115,64 @@ class ChessApp:
     def submit_input(self):
         input_value = self.input_var.get()
         selected_color = self.color_var.get()
-        url = SETTINGS["API"]["search_games"] + urllib.parse.quote(input_value) + "/" + urllib.parse.quote(selected_color)
-        print(url)
-        res = requests.get(url)
-        print(res.json())
+        url = SETTINGS["API"]["search_games"] + urllib.parse.quote(input_value) + "/" + urllib.parse.quote(
+            selected_color)
+
+        try:
+            res = requests.get(url)
+            res.raise_for_status()  # Raises HTTPError for bad responses
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed: {e}")
+            return
+
+        data = res.json()
+        pgn = "\n".join((row2pgn(x) for x in data))
+        temp_file = tempfile.NamedTemporaryFile(suffix=f"{input_value}_none.pgn", delete=False)
+
+        print(temp_file.name)
+
+        with open(temp_file.name, 'w') as file:
+            file.write(pgn)
+
+        temp_file.close()
+        temp_dir = tempfile.TemporaryDirectory()
+
+        analyze_file(temp_file.name, temp_dir.name)
+        file_name_without_ext = os.path.splitext(os.path.basename(temp_file.name))[0]
+        print(f"{temp_dir.name}/{file_name_without_ext}.pkl")
+
+        with open(f"{temp_dir.name}/{file_name_without_ext}.pkl", 'rb') as file:
+            self.fen_obj = pickle.load(file)
+
+        self.predicate()
+
+        os.remove(temp_file.name)
+        temp_dir.cleanup()
+
+    def predicate(self):
+
+        try:
+            fen = " ".join(self.board.fen().split(" ")[:-2])
+            for key in self.fen_obj[fen]:
+                value = self.fen_obj[fen][key]
+                predictions = load_and_predict(np.array([value]))
+                print(f"{key}: {predictions[0][0]}")
+
+        except KeyError:
+            pass
+
+
+def row2pgn(row):
+    return f"""[Event "{row["Event"]}"]
+[Site "{row["Site"]}"]
+[Date "{row["Year"]}.{row["Month"]or"??"}.{row["Day"] or "??"}"]
+[Round "{row["Round"]}"]
+[White "{row["White"]}"]
+[Black "{row["Black"]}"]
+[Result "{row["Result"]}"]
+
+{row["moves"]}
+"""
 
 
 if __name__ == "__main__":

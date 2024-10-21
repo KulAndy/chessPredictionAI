@@ -21,7 +21,10 @@ def convert_dir(directory):
         for future in as_completed(futures):
             file_path = futures[future]
             try:
-                future.result()
+                documents = future.result()
+                if documents:
+                    collection.insert_many(documents)
+
             except Exception as e:
                 print(f"Error processing {file_path}: {e}")
 
@@ -41,8 +44,7 @@ def convert_file(filename):
                             'output': move_data_list[i][2]
                         })
 
-        if documents:
-            collection.insert_many(documents)
+        return documents
 
 
 if __name__ == "__main__":
