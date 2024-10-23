@@ -1,10 +1,15 @@
+import json
 import math
 import os
+from datetime import datetime
+
 import chess.pgn
 import chess
 from collections import defaultdict
 import pickle
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import numpy as np
 
 
 def analyze_dir(directory, out_dir):
@@ -97,9 +102,10 @@ def get_points(result, color):
 
 
 def calculate_percentage_and_points(games_data, min_year, max_year):
-    final_data = defaultdict(lambda: defaultdict(list))
-
     year_range = max_year - min_year + 1
+    final_data = defaultdict(lambda: defaultdict(
+        lambda: {year_int: [0, 0] for year_int in range(min_year, max_year + 1)}
+    ))
 
     for fen, years_data in games_data.items():
         if not isinstance(years_data, dict):
@@ -128,6 +134,13 @@ def calculate_percentage_and_points(games_data, min_year, max_year):
                     percentage = 0
                 avg_points = points / games if games > 0 else 0
 
-                final_data[fen][move].append([(year_int - min_year + 1) / year_range, avg_points, percentage])
+                final_data[fen][move][year_int] = [avg_points, percentage]
+
+    for fen, moves in final_data.items():
+        for move, year_data in moves.items():
+            final_data[fen][move] = [
+                [(year - min_year)/year_range, *data]
+                for year, data in year_data.items()
+            ]
 
     return final_data

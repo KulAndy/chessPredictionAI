@@ -182,7 +182,7 @@ class ChessApp:
                 print(f"{key} {prediction_value}")
 
                 try:
-                    log_value = 1/( math.log(prediction_value, 1/1000) + 1)
+                    log_value = 1/( math.log(prediction_value, 1/1024) + 1)
                 except:
                     log_value = 0
                 print(f"{key} {log_value}")
