@@ -9,9 +9,10 @@ import tempfile
 import requests
 import os
 import numpy as np
+from datetime import datetime
 
 from analyze import analyze_file
-from learning import load_and_predict
+from learning import load_and_predict,normalize_year
 from settings import SETTINGS
 
 CHESS_PIECES = {
@@ -177,7 +178,18 @@ class ChessApp:
             fen = " ".join(self.board.fen().split(" ")[:-2])
             for key in self.fen_obj[fen]:
                 value = self.fen_obj[fen][key]
-                predictions = load_and_predict(np.array([value]))
+                first_items = [x[0] for x in value]
+                for i in range(min(first_items),datetime.now().year+1 ):
+                    if i not in first_items:
+                        value.append([i,0,0])
+
+                predictions = load_and_predict(
+                    np.array(
+                        [
+                            normalize_year(value)
+                        ]
+                    )
+                )
                 prediction_value = predictions[0][0]
                 print(f"{key} {prediction_value}")
 
@@ -185,7 +197,7 @@ class ChessApp:
                     log_value = 1/( math.log(prediction_value, 1/1024) + 1)
                 except:
                     log_value = 0
-                print(f"{key} {log_value}")
+                print(f"{key} {log_value*100}")
                 self.predictions.append((key, prediction_value))
 
                 row_frame = tk.Frame(self.prediction_container)
@@ -213,7 +225,7 @@ class ChessApp:
 
         y = canvas_height - height  # Position the bar from the bottom
         prediction_bar.create_rectangle(0, y, 300, canvas_height, fill="green")
-        prediction_bar.create_text(150, y - 10, text=f"{log_value:.2f}", anchor="center")
+        prediction_bar.create_text(150, y - 10, text=f"{log_value*100:.2f}%", anchor="center")
 
     def update_progress_bar(self, count):
         progress_percentage = (count / len(self.fen_obj)) * 100 if self.fen_obj else 0

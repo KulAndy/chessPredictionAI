@@ -1,4 +1,6 @@
 from pymongo import MongoClient
+from sklearn.preprocessing import MinMaxScaler
+
 from settings import SETTINGS
 import os
 import tensorflow as tf
@@ -11,6 +13,28 @@ db = client[SETTINGS['mongo']['database']]
 collection = db[SETTINGS['mongo']['collection']]
 
 strategy = tf.distribute.MirroredStrategy()
+
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+
+
+def normalize_year(arr, min_value=None, max_value=None):
+    arr = np.array(arr)
+
+    first_items = arr[:, 0]
+
+    if min_value is not None:
+        first_items = np.append(first_items, [min_value - 1])  #for scaling
+    if max_value is not None:
+        first_items = np.append(first_items, [max_value - 1])  #for scaling
+
+    scaler = MinMaxScaler()
+    scaled_years = scaler.fit_transform(first_items.reshape(-1, 1)).flatten()
+
+    data_arr = arr[:, 1:]
+    result = np.array([[scaled_years[i], *data_arr[i]] for i in range(len(arr))])
+
+    return result
 
 
 def learn(batch_size=300_000):
@@ -28,10 +52,14 @@ def learn(batch_size=300_000):
             y_train = []
 
             for doc in docs:
-                input_data = np.array(doc['input'])  # array of 3D vectors, coords between 0 and 1
+                input_data = np.array(
+                    normalize_year(
+                        doc['input'],
+                        doc['first_year'],
+                        doc['year']
+                    )
+                )  # array of 3D vectors, coords between 0 and 1
                 output_data = np.array(doc['output'])  # float between 0 and 1
-
-                output_data = np.log(output_data + 1e-8)
 
                 x_train.append(input_data)
                 y_train.append(output_data)
@@ -98,12 +126,13 @@ def load_and_predict(new_data):
 
 if __name__ == '__main__':
     new_data = np.random.rand(2, 5, 3)
-    # print(new_data)
-    # predictions = load_and_predict(new_data)
-    # print(f"Predictions on new data: {predictions}")
-    # for x in predictions:
-    #     for value in x:
-    #         print(f"{value:.10f}")
+    print(new_data)
+    predictions = load_and_predict(new_data)
+    print(f"Predictions on new data: {predictions}")
+    for x in predictions:
+        for value in x:
+            print(f"{value:.10f}")
+
     test_set = np.array([
         [[0, 0, 0], [0, 0, 0]],
         [[0, 0, 0], [0.1, 0.1, 0.1]],

@@ -1,12 +1,12 @@
 SETTINGS = {
-    'splitted_pgns_dir': 'splitted_pgns2',
+    'splitted_pgns_dir': 'splitted_pgns',
     'ignored_players': ['?', '*', 'N, N', 'N, N.'],
     'analyzed_games': 'analyzed_games',
     'mongo': {
         'host': "localhost",
         'port': 27017,
         'database': 'ai_data_set',
-        'collection': 'ai_data_set2',
+        'collection': 'ai_data_set',
     },
     'model_dir': 'saved_model',
     'API': {
