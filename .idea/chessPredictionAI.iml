@@ -3,7 +3,10 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
-      <excludeFolder url="file://$MODULE_DIR$/splitted_pgns_bak" />
+      <excludeFolder url="file://$MODULE_DIR$/analyzed_games" />
+      <excludeFolder url="file://$MODULE_DIR$/analyzed_games2" />
+      <excludeFolder url="file://$MODULE_DIR$/splitted_pgns" />
+      <excludeFolder url="file://$MODULE_DIR$/splitted_pgns2" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

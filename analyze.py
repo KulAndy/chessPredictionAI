@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 
 
-def analyze_dir(directory, out_dir):
+def analyze_dir(directory, out_dir, batch_size=1000):
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
@@ -17,14 +17,18 @@ def analyze_dir(directory, out_dir):
         if os.path.isfile(os.path.join(directory, file_name))
     ]
 
-    with ThreadPoolExecutor() as executor:
-        futures = {executor.submit(analyze_file, file_path, out_dir): file_path for file_path in file_paths}
-        for future in as_completed(futures):
-            file_path = futures[future]
-            try:
-                future.result()
-            except Exception as e:
-                print(f"Error processing {file_path}: {e}")
+    # Process files in batches
+    for i in range(0, len(file_paths), batch_size):
+        batch = file_paths[i:i + batch_size]
+
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(analyze_file, file_path, out_dir): file_path for file_path in batch}
+            for future in as_completed(futures):
+                file_path = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Error processing {file_path}: {e}")
 
 
 def analyze_file(filename, out_dir):
