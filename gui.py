@@ -12,7 +12,7 @@ import numpy as np
 from datetime import datetime
 
 from analyze import analyze_file
-from learning import load_and_predict,normalize_year
+from learning import load_and_predict, normalize_year
 from settings import SETTINGS
 
 CHESS_PIECES = {
@@ -76,10 +76,6 @@ class ChessApp:
         self.prediction_canvas.create_window((0, 0), window=self.prediction_container, anchor="nw")
 
         self.prediction_container.bind("<Configure>", self.on_frame_configure)
-
-        # Progress bar
-        self.progress_bar = ttk.Progressbar(self.master, orient="horizontal", length=300, mode="determinate")
-        self.progress_bar.pack(pady=10)
 
         self.draw_board()
 
@@ -179,9 +175,9 @@ class ChessApp:
             for key in self.fen_obj[fen]:
                 value = self.fen_obj[fen][key]
                 first_items = [x[0] for x in value]
-                for i in range(min(first_items),datetime.now().year+1 ):
+                for i in range(min(first_items), datetime.now().year + 1):
                     if i not in first_items:
-                        value.append([i,0,0])
+                        value.append([i, 0, 0])
 
                 predictions = load_and_predict(
                     np.array(
@@ -194,42 +190,33 @@ class ChessApp:
                 print(f"{key} {prediction_value}")
 
                 try:
-                    log_value = 1/( math.log(prediction_value, 1/1024) + 1)
+                    log_value = 1 / (math.log(prediction_value, 1 / 1024) + 1)
                 except:
                     log_value = 0
-                print(f"{key} {log_value*100}")
-                self.predictions.append((key, prediction_value))
+                print(f"{key} {log_value * 100}")
+                self.predictions.append((key, prediction_value, log_value * 100))
 
+            # Sort predictions in descending order by prediction_value
+            self.predictions.sort(key=lambda x: x[1], reverse=True)
+
+            for move, prediction_value, percent_value in self.predictions:
                 row_frame = tk.Frame(self.prediction_container)
                 row_frame.pack(fill=tk.X, pady=2)
 
-                move_label = tk.Label(row_frame, text=key)
+                move_label = tk.Label(row_frame, text=move)
                 move_label.pack(side=tk.LEFT, padx=5)
 
-                self.draw_prediction_bar(row_frame, log_value)
-
-                self.update_progress_bar(len(self.predictions))
+                progress = ttk.Progressbar(row_frame, orient="horizontal", length=300, mode="determinate")
+                progress['value'] = percent_value
+                progress.pack(side=tk.LEFT, padx=5)
 
             print("=" * 50)
 
         except KeyError:
             pass
 
-    def draw_prediction_bar(self, parent_frame, log_value):
-        canvas_height = 30
-        max_log_value = 3
-        height = min(max(int(log_value / max_log_value * canvas_height), 0), canvas_height)
-
-        prediction_bar = tk.Canvas(parent_frame, width=300, height=canvas_height)
-        prediction_bar.pack(side=tk.LEFT)
-
-        y = canvas_height - height  # Position the bar from the bottom
-        prediction_bar.create_rectangle(0, y, 300, canvas_height, fill="green")
-        prediction_bar.create_text(150, y - 10, text=f"{log_value*100:.2f}%", anchor="center")
-
-    def update_progress_bar(self, count):
-        progress_percentage = (count / len(self.fen_obj)) * 100 if self.fen_obj else 0
-        self.progress_bar['value'] = progress_percentage
+    def on_frame_configure(self, event):
+        self.prediction_canvas.configure(scrollregion=self.prediction_canvas.bbox("all"))
 
     def on_frame_configure(self, event):
         self.prediction_canvas.configure(scrollregion=self.prediction_canvas.bbox("all"))
