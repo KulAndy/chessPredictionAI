@@ -39,7 +39,7 @@ class ChessApp:
         self.selected_square = None
 
         self.fen_obj = {}
-        self.predictions = []  # Store predictions for display
+        self.predictions = []
 
         self.input_var = tk.StringVar()
         self.input_entry = ttk.Combobox(self.master, textvariable=self.input_var)
@@ -60,6 +60,9 @@ class ChessApp:
         self.canvas.pack()
         self.canvas.bind("<Button-1>", self.on_click)
 
+        self.undo_button = tk.Button(self.master, text="Undo", command=self.undo_move)
+        self.undo_button.pack(pady=10)
+
         # Frame for predictions with a scrollbar
         self.prediction_frame = ttk.Frame(self.master)
         self.prediction_frame.pack(pady=10)
@@ -78,6 +81,13 @@ class ChessApp:
         self.prediction_container.bind("<Configure>", self.on_frame_configure)
 
         self.draw_board()
+
+    def undo_move(self):
+        if self.board.move_stack:
+            self.board.pop()
+            self.draw_board()
+            self.predicate()
+
 
     def draw_board(self):
         self.canvas.delete("all")
