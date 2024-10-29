@@ -63,7 +63,6 @@ class ChessApp:
         self.undo_button = tk.Button(self.master, text="Undo", command=self.undo_move)
         self.undo_button.pack(pady=10)
 
-        # Frame for predictions with a scrollbar
         self.prediction_frame = ttk.Frame(self.master)
         self.prediction_frame.pack(pady=10)
 
@@ -169,6 +168,9 @@ class ChessApp:
 
         with open(f"{temp_dir.name}/{file_name_without_ext}.pkl", 'rb') as file:
             self.fen_obj = pickle.load(file)
+
+        self.board = chess.Board()
+        self.draw_board()
 
         self.predicate()
 
