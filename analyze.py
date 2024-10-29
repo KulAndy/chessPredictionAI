@@ -64,7 +64,9 @@ def process_pgn(file_path, color=None):
                 result = game.headers.get("Result")
 
                 try:
-                    for move in game.mainline_moves():
+                    for i, move in enumerate(game.mainline_moves()):
+                        if i >= 50:
+                            break
                         fen = " ".join(board.fen().split(" ")[:-2])
                         if board.is_legal(move):
                             if (color == "white" and board.turn == chess.WHITE) or \
@@ -126,7 +128,3 @@ def calculate_percentage_and_points(games_data, years):
             ]
 
     return final_data
-
-
-
-
