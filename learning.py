@@ -14,9 +14,6 @@ collection = db[SETTINGS['mongo']['collection']]
 
 strategy = tf.distribute.MirroredStrategy()
 
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-
 
 def normalize_year(arr, min_value=None, max_value=None):
     arr = np.array(arr)
