@@ -1,5 +1,7 @@
 import os
 import pickle
+from datetime import datetime
+
 from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -12,7 +14,7 @@ collection = db[SETTINGS['mongo']['collection']]
 
 
 def convert_dir(directory, batch_size=1000):
-    collection.delete_many({})
+    collection.drop()
     file_paths = [os.path.join(directory, file_name) for file_name in os.listdir(directory) if
                   os.path.isfile(os.path.join(directory, file_name))]
     for i in range(0, len(file_paths), batch_size):
@@ -25,6 +27,7 @@ def convert_dir(directory, batch_size=1000):
                     documents = future.result()
                     if documents:
                         collection.insert_many(documents)
+                    os.remove(file_path)
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
 
@@ -35,23 +38,34 @@ def convert_file(filename):
         documents = []
 
         for fen, fen_data in data.items():
+            last_year = 0
             for move, move_data_list in fen_data.items():
-                first_year = int(min([int(x[0]) for x in move_data_list]))
+                included_years = [int(x[0]) for x in move_data_list]
+                first_year = int(min(included_years))
+                last_year_tmp = int(max(included_years))
+                if last_year_tmp-first_year > 120:
+                    continue
+                last_year = max(last_year_tmp, last_year)
 
-                for i in range(len(move_data_list)):
-                    prev_years = [
-                        [int(x[0]), x[1], x[2]] for x in move_data_list
-                        if int(x[0]) < int(move_data_list[i][0]) and move_data_list[i][2] > 0
-                    ]  # Ensure conversion to int
+            for move, move_data_list in fen_data.items():
+                included_years = [int(x[0]) for x in move_data_list]
+                first_year = int(min(included_years))
+                last_year_tmp = int(max(included_years))
+                if last_year_tmp-first_year > 120:
+                    continue
+                filled_year = []
+                for i in range(first_year, last_year):
+                    if i not in included_years:
+                        filled_year.append([i, 0, 0])
+                data = sorted(move_data_list[:-120] + filled_year, key=lambda x: x[0])
+                time_series = [rest for x, *rest in data]
 
-                    if len(prev_years) > 0:
-                        documents.append({
-                            'input': prev_years,
-                            'output': move_data_list[i][2],
-                            'year': int(move_data_list[i][0]),
-                            'first_year': first_year
-                        })
-
+                if len(time_series) > 1:
+                    documents.append({
+                        'series': time_series,
+                        'first_year': first_year,
+                        'last_year': last_year
+                    })
         return documents
 
 

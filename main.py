@@ -10,8 +10,8 @@ from analyze import analyze_dir
 
 
 def prepare_files():
-    pgn_file = "Giga.pgn"
-    # pgn_file = "tb_all.pgn"
+    # pgn_file = "Giga.pgn"
+    pgn_file = "tb_all.pgn"
 
     if os.path.exists(SETTINGS['splitted_pgns_dir']):
         shutil.rmtree(SETTINGS['splitted_pgns_dir'])

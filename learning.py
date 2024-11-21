@@ -1,132 +1,116 @@
-from pymongo import MongoClient
-from sklearn.preprocessing import MinMaxScaler
-
-from settings import SETTINGS
-import os
 import tensorflow as tf
-from tensorflow.keras import layers, models
+from tensorflow.keras import layers, models, mixed_precision
 import numpy as np
+import datetime
+import os
+from pymongo import MongoClient
+from settings import SETTINGS
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+
+mixed_precision.set_global_policy('mixed_float16')
+
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        tf.config.set_visible_devices(gpus[0], 'GPU')
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+    except RuntimeError as e:
+        print(f"Error setting up GPU memory growth: {e}")
 
 connection_string = f"mongodb://{SETTINGS['mongo']['host']}:{SETTINGS['mongo']['port']}"
 client = MongoClient(connection_string)
 db = client[SETTINGS['mongo']['database']]
 collection = db[SETTINGS['mongo']['collection']]
 
-strategy = tf.distribute.MirroredStrategy()
+early_stopping = EarlyStopping(
+    monitor='loss',
+    patience=30,
+    restore_best_weights=True,
+)
 
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-
-
-def normalize_year(arr, min_value=None, max_value=None):
-    arr = np.array(arr)
-
-    first_items = arr[:, 0]
-
-    if min_value is not None:
-        first_items = np.append(first_items, [min_value - 1])  #for scaling
-    if max_value is not None:
-        first_items = np.append(first_items, [max_value - 1])  #for scaling
-
-    scaler = MinMaxScaler()
-    scaled_years = scaler.fit_transform(first_items.reshape(-1, 1)).flatten()
-
-    data_arr = arr[:, 1:]
-    result = np.array([[scaled_years[i], *data_arr[i]] for i in range(len(arr))])
-
-    return result
+reduce_lr = ReduceLROnPlateau(
+    monitor='loss',
+    factor=0.1,
+    patience=10,
+    min_lr=1e-7
+)
 
 
-def learn(batch_size=300_000):
+def learn(batch_size=32768*8, epochs=1000, train_batch_size=128):
+    log_dir = (SETTINGS.get('tensorboard_log_dir', 'logs/')
+               + f"R2_M3_B1_{epochs}_{train_batch_size}_"
+               + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+               )
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
     docs_count = collection.count_documents({})
     batch_start = 0
 
-    with strategy.scope():
-        model = None
-        input_shape = (None, 3)
+    model = None
+    while batch_start < docs_count:
+        print(f"Processing batch {batch_start} to {batch_start + batch_size}")
+        docs = collection.find({}).skip(batch_start).limit(batch_size)
+        x_train = []
+        y_train = []
 
-        while batch_start < docs_count:
-            print(f"Processing batch {batch_start} to {batch_start + batch_size}")
-            docs = collection.find({}).skip(batch_start).limit(batch_size)
-            x_train = []
-            y_train = []
+        for doc in docs:
+            x_train.append(doc['series'][::-1])
+            y_train.append(doc['series'][-1][0])
 
-            for doc in docs:
-                input_data = np.array(
-                    normalize_year(
-                        doc['input'],
-                        doc['first_year'],
-                        doc['year']
-                    )
-                )  # array of 3D vectors, coords between 0 and 1
-                output_data = np.array(doc['output'])  # float between 0 and 1
+        x_train = tf.keras.preprocessing.sequence.pad_sequences(x_train, padding='post', dtype='float32', value=0)
+        y_train = np.clip(np.array(y_train), 0, 1)
 
-                x_train.append(input_data)
-                y_train.append(output_data)
+        dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+        dataset = dataset.shuffle(buffer_size=len(x_train)).batch(train_batch_size).prefetch(tf.data.AUTOTUNE)
+        if model is None:
+            input_shape = (None, 2)
+            model = models.Sequential([
+                layers.Input(shape=input_shape),
 
-            x_train = tf.keras.preprocessing.sequence.pad_sequences(x_train, padding='post', dtype='float32', value=0.0)
-            y_train = np.array(y_train)
+                layers.GRU(128, return_sequences=True),
+                layers.Dropout(0.3),
 
-            dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-            dataset = dataset.shuffle(buffer_size=len(x_train)).batch(256).prefetch(tf.data.AUTOTUNE)
+                layers.GRU(64, return_sequences=True),
+                layers.Dropout(0.3),
 
-            if model is None:
-                model = models.Sequential()
-                model.add(layers.Input(shape=input_shape))
-                model.add(layers.TimeDistributed(layers.Dense(32, activation='relu')))
-                model.add(layers.GlobalAveragePooling1D())
+                layers.GRU(32, return_sequences=True),
+                layers.TimeDistributed(layers.Dense(64, activation='relu')),
+                layers.Dropout(0.3),
 
-                model.add(layers.Dense(1, activation='sigmoid'))
+                layers.GlobalAveragePooling1D(),
 
-                model.compile(optimizer='adam', loss='mse')
-                model.summary()
+                layers.Dense(32, activation='relu'),
+                layers.Dropout(0.3),
+                layers.Dense(16, activation='relu'),
+                layers.Dense(8, activation='relu'),
+                layers.Dense(4, activation='relu'),
 
-            model.fit(dataset, epochs=10)
+                layers.Dense(1, activation='sigmoid')
+            ])
+            model.compile(optimizer='adam', loss='mse')
 
-            if batch_start + batch_size < docs_count:
-                print(f"Testing on next batch {batch_start + batch_size} to {batch_start + 2 * batch_size}")
-                test_docs = collection.find({}).skip(batch_start + batch_size).limit(batch_size)
-                x_test = []
-                y_test = []
+            model.summary()
 
-                for doc in test_docs:
-                    input_data = np.array(doc['input'])
-                    output_data = np.array(doc['output'])
+        model.fit(dataset, epochs=epochs, callbacks=[tensorboard_callback, early_stopping, reduce_lr])
+        batch_start += batch_size
 
-                    output_data = np.log(output_data + 1e-8)
+    # Save the model after training
+    if not os.path.exists(SETTINGS['model_dir']):
+        os.mkdir(SETTINGS['model_dir'])
 
-                    x_test.append(input_data)
-                    y_test.append(output_data)
-
-                x_test = tf.keras.preprocessing.sequence.pad_sequences(x_test, padding='post', dtype='float32',
-                                                                       value=0.0)
-                y_test = np.array(y_test)
-
-                test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
-                test_dataset = test_dataset.batch(256).prefetch(tf.data.AUTOTUNE)
-
-                loss = model.evaluate(test_dataset)
-                print(f"Test loss: {loss}")
-
-                model.fit(test_dataset, epochs=1)
-
-            batch_start += batch_size
-
-        if not os.path.exists(SETTINGS['model_dir']):
-            os.mkdir(SETTINGS['model_dir'])
-
-        model.save(SETTINGS['model_dir'] + '/model.keras')
+    model.save(SETTINGS['model_dir'] + '/model.keras')
 
 
+# Load and predict
 def load_and_predict(new_data):
     model = tf.keras.models.load_model(SETTINGS['model_dir'] + '/model.keras')
     predictions = model.predict(new_data)
     return predictions
 
 
+# Main script
 if __name__ == '__main__':
-    new_data = np.random.rand(2, 5, 3)
-    print(new_data)
+    new_data = np.random.rand(2, 5, 2)
     predictions = load_and_predict(new_data)
     print(f"Predictions on new data: {predictions}")
     for x in predictions:
@@ -134,22 +118,23 @@ if __name__ == '__main__':
             print(f"{value:.10f}")
 
     test_set = np.array([
-        [[0, 0, 0], [0, 0, 0]],
-        [[0, 0, 0], [0.1, 0.1, 0.1]],
-        [[0.1, 0.1, 0.1], [0.2, 0.2, 0.2]],
-        [[1, 1, 1], [0.9, 0.9, 0.9]],
-        [[1, 1, 1], [1, 1, 1]]
+        [[0, 0], [0, 0]],
+        [[0, 0], [0.1, 0.1]],
+        [[0.1, 0.1], [0.2, 0.2]],
+        [[0.5, 0.5], [0.5, 0.5]],
+        [[1, 1], [0.9, 0.9]],
+        [[1, 1], [1, 1]]
     ])
     predictions = load_and_predict(test_set)
-    print(f"Predictions on new data: {predictions}")
+    print(f"Predictions on test1 data: {predictions}")
     for x in predictions:
         for value in x:
             print(f"{value:.10f}")
     test_set2 = np.array([
-        [[0.49, 0.49, 0.49], [0.5, 0.5, 0.5], [0.51, 0.51, 0.51]]
+        [[0.49, 0.49], [0.5, 0.5], [0.51, 0.51]]
     ])
     predictions = load_and_predict(test_set2)
-    print(f"Predictions on new data: {predictions}")
+    print(f"Predictions on test2 data: {predictions}")
     for x in predictions:
         for value in x:
             print(f"{value:.10f}")

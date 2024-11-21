@@ -30,7 +30,7 @@ def split_pgn(pgn_file):
 
     try:
         with open(pgn_file, 'r') as pgn:
-            while (game := chess.pgn.read_game(pgn)) is not None:
+            while (game := chess.pgn.read_game(pgn)):
                 game_count += 1
 
                 white = clean_player_name(game.headers.get('White'))

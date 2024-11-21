@@ -36,6 +36,7 @@ def analyze_file(filename, out_dir):
     color = file_name_without_ext.split("_")[-1]
 
     if os.path.exists(f"{out_dir}/{file_name_without_ext}.pkl"):
+        os.remove(filename)
         return True
 
     results = process_pgn(filename, None if color == "none" else color)
@@ -47,6 +48,7 @@ def analyze_file(filename, out_dir):
 
     with open(f"{out_dir}/{file_name_without_ext}.pkl", 'wb') as out:
         pickle.dump(results_dict, out)
+    os.remove(filename)
     return True
 
 

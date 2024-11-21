@@ -12,7 +12,7 @@ import numpy as np
 from datetime import datetime
 
 from analyze import analyze_file
-from learning import load_and_predict, normalize_year
+from learning import load_and_predict
 from settings import SETTINGS
 
 CHESS_PIECES = {
@@ -86,7 +86,6 @@ class ChessApp:
             self.board.pop()
             self.draw_board()
             self.predicate()
-
 
     def draw_board(self):
         self.canvas.delete("all")
@@ -174,7 +173,6 @@ class ChessApp:
 
         self.predicate()
 
-        os.remove(temp_file.name)
         temp_dir.cleanup()
 
     def predicate(self):
@@ -184,29 +182,44 @@ class ChessApp:
 
         try:
             fen = " ".join(self.board.fen().split(" ")[:-2])
+            last_year = 0
+            first_year = datetime.now().year
             for key in self.fen_obj[fen]:
                 value = self.fen_obj[fen][key]
-                first_items = [x[0] for x in value]
-                for i in range(min(first_items), datetime.now().year + 1):
-                    if i not in first_items:
-                        value.append([i, 0, 0])
+
+                included_years = [int(x[0]) for x in value]
+                last_year = max(int(max(included_years)), last_year)
+                first_year = min(int(min(included_years)), first_year)
+
+            for key in self.fen_obj[fen]:
+                value = self.fen_obj[fen][key]
+
+                included_years = [int(x[0]) for x in value]
+                filled_year = []
+                for i in range(first_year, last_year):
+                    if i not in included_years:
+                        filled_year.append([i, 0, 0])
+                data = sorted(value + filled_year, key=lambda x: x[0])
+                time_series = [rest for x, *rest in data]
 
                 predictions = load_and_predict(
                     np.array(
                         [
-                            normalize_year(value)
+                            time_series
                         ]
                     )
                 )
                 prediction_value = predictions[0][0]
                 print(f"{key} {prediction_value}")
+                print(f"{time_series}")
+                print(f"{prediction_value}")
 
                 try:
-                    log_value = 1 / (math.log(prediction_value, 1 / 1024) + 1)
+                    log_value = 1 / (math.log(prediction_value, 1 / 32) + 1)
                 except:
                     log_value = 0
                 print(f"{key} {log_value * 100}")
-                self.predictions.append((key, prediction_value, log_value * 100))
+                self.predictions.append((key, prediction_value, prediction_value * 100))
 
             # Sort predictions in descending order by prediction_value
             self.predictions.sort(key=lambda x: x[1], reverse=True)
