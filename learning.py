@@ -36,10 +36,10 @@ reduce_lr = ReduceLROnPlateau(
 )
 
 
-def learn(batch_size=32768*8, epochs=1000, train_batch_size=128):
+def learn(batch_size=32768 * 8, epochs=1000, train_batch_size=128):
+    model_name = f"R2_M3_B1_{epochs}_{train_batch_size}_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = (SETTINGS.get('tensorboard_log_dir', 'logs/')
-               + f"R2_M3_B1_{epochs}_{train_batch_size}_"
-               + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+               + model_name
                )
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
@@ -47,6 +47,8 @@ def learn(batch_size=32768*8, epochs=1000, train_batch_size=128):
     batch_start = 0
 
     model = None
+    if not os.path.exists(SETTINGS['model_dir']):
+        os.mkdir(SETTINGS['model_dir'])
     while batch_start < docs_count:
         print(f"Processing batch {batch_start} to {batch_start + batch_size}")
         docs = collection.find({}).skip(batch_start).limit(batch_size)
@@ -54,10 +56,12 @@ def learn(batch_size=32768*8, epochs=1000, train_batch_size=128):
         y_train = []
 
         for doc in docs:
-            x_train.append(doc['series'][::-1])
-            y_train.append(doc['series'][-1][0])
+            series = doc.get('series', [])
+            if len(series) > 1:
+                x_train.append([i for i in reversed(series[:-1])])
+                y_train.append(series[-1][-1])
 
-        x_train = tf.keras.preprocessing.sequence.pad_sequences(x_train, padding='post', dtype='float32', value=0)
+        x_train = tf.keras.preprocessing.sequence.pad_sequences(x_train, padding='post', dtype='float32', value=[0, 0])
         y_train = np.clip(np.array(y_train), 0, 1)
 
         dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
@@ -93,11 +97,7 @@ def learn(batch_size=32768*8, epochs=1000, train_batch_size=128):
 
         model.fit(dataset, epochs=epochs, callbacks=[tensorboard_callback, early_stopping, reduce_lr])
         batch_start += batch_size
-
-    # Save the model after training
-    if not os.path.exists(SETTINGS['model_dir']):
-        os.mkdir(SETTINGS['model_dir'])
-
+        model.save(SETTINGS['model_dir'] + f'/{model_name}_{batch_start}.keras')
     model.save(SETTINGS['model_dir'] + '/model.keras')
 
 
@@ -123,6 +123,7 @@ if __name__ == '__main__':
         [[0.1, 0.1], [0.2, 0.2]],
         [[0.5, 0.5], [0.5, 0.5]],
         [[1, 1], [0.9, 0.9]],
+        [[0.9, 0.9], [1, 1]],
         [[1, 1], [1, 1]]
     ])
     predictions = load_and_predict(test_set)
