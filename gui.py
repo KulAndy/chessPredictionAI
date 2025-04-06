@@ -1,3 +1,4 @@
+import io
 import math
 import pickle
 import tkinter as tk
@@ -197,7 +198,7 @@ class ChessApp:
                 filled_year = []
                 for i in range(first_year, last_year):
                     if i not in included_years:
-                        filled_year.append([i, 0, 0])
+                        filled_year.append([i, 1e-6, 0])
                 data = sorted(value + filled_year, key=lambda x: x[0])
                 time_series = [rest for x, *rest in data]
 
@@ -247,15 +248,29 @@ class ChessApp:
 
 
 def row2pgn(row):
-    return f"""[Event "{row["Event"]}"]
-[Site "{row["Site"]}"]
-[Date "{row["Year"]}.{row["Month"] or "??"}.{row["Day"] or "??"}"]
-[Round "{row["Round"]}"]
-[White "{row["White"]}"]
-[Black "{row["Black"]}"]
-[Result "{row["Result"]}"]
+    board = chess.Board()
+    headers = {
+        "Event": row["Event"],
+        "Site": row["Site"],
+        "Date": f"{row["Year"]}.{row["Month"] or "??"}.{row["Day"] or "??"}",
+        "Round": row["Round"],
+        "White": row["White"],
+        "Black": row["Black"],
+        "Result": row["Result"],
+    }
 
-{row["moves"]}\n"""
+    for move in row["moves"]:
+        uci = move["from"] + move["to"]
+        if "promotion" in move:
+            uci += move["promotion"]
+
+        parsed_move = chess.Move.from_uci(uci)
+        board.push(parsed_move)
+    game = chess.pgn.Game.from_board(board)
+    game.headers.update(headers)
+    output = io.StringIO()
+    print(game, file=output)
+    return output.getvalue()
 
 
 if __name__ == "__main__":
