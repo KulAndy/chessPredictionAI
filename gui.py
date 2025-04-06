@@ -183,18 +183,18 @@ class ChessApp:
 
         try:
             fen = " ".join(self.board.fen().split(" ")[:-2])
-            last_year = 0
+            first_year = min(
+                int(x[0])
+                for key in self.fen_obj[fen]
+                for x in self.fen_obj[fen][key]
+            )
+            last_year = datetime.now().year
+
+
             for key in self.fen_obj[fen]:
                 value = self.fen_obj[fen][key]
 
                 included_years = [int(x[0]) for x in value]
-                last_year = max(int(max(included_years)), last_year)
-
-            for key in self.fen_obj[fen]:
-                value = self.fen_obj[fen][key]
-
-                included_years = [int(x[0]) for x in value]
-                first_year = int(min(included_years))
                 filled_year = []
                 for i in range(first_year, last_year):
                     if i not in included_years:
